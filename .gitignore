@@ -1,0 +1,37 @@
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# --- Node / frontend ---
+node_modules/
+dist/
+.vite/
+
+# --- Env ---
+.env
+.env.local
+
+# --- File-based storage (PRD section 27) ---
+uploads/*
+!uploads/.gitkeep
+results/*
+!results/.gitkeep
+temp/*
+!temp/.gitkeep
+
+# --- CV model weights (large binaries, fetch separately) ---
+app/pipeline/models/*.pt
+app/pipeline/models/*.onnx
+
+# --- Training artifacts (dataset + yolo run history, see TRAINING.md) ---
+training/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+*.pt

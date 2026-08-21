@@ -1,0 +1,441 @@
+================================================================================
+PITCHTRACK — PROJECT AUDIT REPORT
+Prepared by: External PM/Client Review (simulated)
+Audit date: 2026-08-17
+Scope: Full repository (backend, frontend, CV pipeline, model training, docs)
+================================================================================
+
+ASSUMPTIONS STATED UP FRONT
+--------------------------------------------------------------------------------
+- Backend: Python 3.13, FastAPI 0.115, file-based storage (no database by
+  design — PRD explicitly defers a DB until defined scale criteria are met).
+- CV pipeline: Ultralytics YOLOv8 (v8.2.103) + ByteTrack (via `supervision`
+  0.23) + OpenCV (optical flow, perspective transform) + scikit-learn
+  (K-Means team-color clustering).
+- Frontend: React 18 + Vite 5, no TypeScript, no component test setup,
+  `framer-motion` recently added for one marketing animation.
+- Single developer/owner (solo project, per PRD authorship). "Ownership"
+  assignments below are by ROLE, not by name, since one person likely
+  covers all roles today — useful for prioritizing focus, not for staffing.
+- This audit is grounded in the actual repository structure, dependency
+  manifests, config values, and training run artifacts inspected during
+  this review — not full line-by-line source reading of every file.
+
+
+================================================================================
+1. EXECUTIVE SUMMARY
+================================================================================
+PitchTrack is a functional MVP: a file-based (no-DB) football video
+analytics app with a real, working YOLOv8 + ByteTrack pipeline, a FastAPI
+backend, and a React dashboard. Several serious pipeline-breaking bugs were
+found and fixed during recent work (see Section 2), and the app now
+produces real tracking output instead of only mock data.
+
+Overall health: YELLOW. The backend/pipeline core is in genuinely good
+shape for an MVP. Three risks are severe enough to flag before this goes
+any further:
+
+  1. ZERO VERSION CONTROL — the entire project (all code, all fixes made
+     to date) has no git commit history. One bad `rm -rf` or disk failure
+     away from losing everything. This is the single highest-priority
+     item in this report, full stop.
+  2. THE DASHBOARD OVERLAY IS FAKE — the Analysis Workspace's on-video
+     tracking overlay is a procedurally-animated placeholder (sine/cosine
+     motion), not driven by the real pipeline's `positions.json`. Users
+     watching the "live tracking" are watching a simulation, not their
+     actual match. This is a functional/trust gap, not a polish item.
+  3. ZERO AUTOMATED TESTS — no backend tests, no frontend tests. Every
+     change today was verified manually (syntax checks, manual browser
+     clicks, one-off script runs). This does not scale past a solo
+     hobby-project pace.
+
+None of these are hard to fix. All three are addressed with concrete,
+scoped recommendations below.
+
+
+================================================================================
+2. CODEBASE HEALTH AND POTENTIAL BUGS
+================================================================================
+
+2.1 BACKEND / PIPELINE — RECENTLY FOUND & FIXED (for the record)
+--------------------------------------------------------------------------------
+These are cited because they're exactly the CLASS of bug a fresh audit
+should expect to keep finding in a young CV pipeline codebase — useful as
+a pattern reference even though each individual instance is now resolved:
+
+- Silent resolution mismatch: inference ran at YOLO's default 640px
+  regardless of the training `imgsz` (1280), degrading small/fast object
+  (ball) detection without any error or warning. CLASS OF BUG: implicit
+  library defaults silently overriding an explicit training-time choice.
+- A required calibration input (`pitch_pixel_corners`) was never wired
+  from the API layer into the pipeline call, so every real (non-mock)
+  processing run failed after the expensive steps (detection, tracking,
+  optical flow) but before producing any output. CLASS OF BUG: a
+  parameter that is "required" by one layer but never supplied by the
+  caller — only surfaces once you actually exercise the full path
+  end-to-end, which nothing had done yet.
+- Dataset had a `goalkeeper` class distinct from `player`; nothing
+  downstream recognized it, so goalkeepers were detected and tracked
+  internally, then silently dropped before ever reaching output JSON.
+  CLASS OF BUG: label-schema drift between the training dataset and the
+  application's hardcoded assumptions about class names.
+- Tracker defaults (`lost_track_buffer`, `frame_rate`) assumed a
+  well-trained, high-confidence, 30fps detector; the actual model/video
+  didn't match either assumption, causing IDs to churn. CLASS OF BUG:
+  library defaults tuned for a "happy path" that doesn't match this
+  project's actual data characteristics.
+
+2.2 STILL OPEN — FUNCTIONAL RISKS
+--------------------------------------------------------------------------------
+- [HIGH] Frontend tracking overlay (`VideoPlayer.jsx`) is procedurally
+  generated, not sourced from `positions.json` or the annotated video's
+  real detections. This is the most visible gap between "what the CV
+  pipeline actually computed" and "what the user is shown."
+- [HIGH] Speed/distance are hardcoded to 0 whenever a video isn't
+  pitch-calibrated — which is currently ALL videos, since no calibration
+  UI exists and nothing supplies `pitch_pixel_corners`. The dashboard has
+  no visible indicator explaining WHY speed/distance read zero; a user
+  will read this as a bug, not a missing feature.
+  reasonable check-in: what a user would actually see today when they
+  open Analysis for a freshly processed video is worth confirming before
+  the next demo.
+- [MEDIUM] `read_video()` loads an entire video into memory as a Python
+  list of frames before processing. With `MAX_DURATION_SECONDS` allowing
+  up to 3 hours of footage, a long high-resolution upload can exhaust
+  memory on a modest machine. Typical failure mode: the backend process
+  is killed mid-processing with no useful error surfaced to the user (job
+  just sits at "Processing" or fails with an opaque OOM-kill).
+  common example to watch for: a coach uploads a full 90-minute match at
+  1080p — this is exactly the primary use case per the PRD, and exactly
+  the case most likely to hit this ceiling.
+- [MEDIUM] Video processing runs synchronously inside a FastAPI
+  BackgroundTask on the same process serving HTTP requests. One video
+  processing blocks that worker; two concurrent uploads queue behind each
+  other with no visible queue position, and a crash mid-processing has no
+  retry/resume.
+- [MEDIUM] The "processing steps" UI (Player Detection / Tracking / Team
+  Classification / Speed Calculation) is a static checklist that flips
+  waiting -> running -> done as a block, not tied to real pipeline
+  progress. A long video will sit on "running" for all four steps
+  simultaneously with no finer-grained feedback — looks stalled even when
+  it isn't.
+- [LOW-MEDIUM] Errors from the pipeline are captured as a single
+  `str(exc)` message with no stack trace persisted anywhere (no log
+  file, no structured logging). Debugging a failure that happened
+  yesterday means it's already gone.
+- [LOW] CORS is hardcoded to a single localhost origin — correct for
+  local dev, will silently break the first time this is deployed anywhere
+  else, with a browser-console-only error that's easy to miss.
+
+2.3 REPO / PROJECT HYGIENE
+--------------------------------------------------------------------------------
+- [CRITICAL] No git repository has any commits. `git log` returns "does
+  not have any commits yet." Every line of code, every fix, every hour of
+  work across this entire project (and its sibling projects in the same
+  parent folder) currently exists in exactly one copy, on one disk, with
+  no history, no diff trail, and no recovery path if a file is corrupted,
+  overwritten, or accidentally deleted.
+- [LOW] Project directory is ~2.4 GB, almost entirely training data and
+  run history (correctly gitignored, so this is a disk-hygiene note, not
+  a repo-bloat risk). Several superseded training runs
+  (`train`, `train2`, `train3`, `pitchtrack_20ep_test`,
+  `pitchtrack_final_test`, `conf_40_test`, `conf_40_test2`) are still on
+  disk with no documented retention policy — harmless today, will become
+  confusing clutter after a few more training iterations.
+- [LOW] No `.env`/environment-based configuration — paths and flags
+  (`MODEL_PATH`, `USE_MOCK_PIPELINE`, CORS origin) are hardcoded constants
+  in `config.py`. Fine at one-developer scale; will need externalizing
+  before any deployment beyond a single known machine.
+
+2.4 TESTING
+--------------------------------------------------------------------------------
+- [HIGH] Zero automated tests exist anywhere in the repository — no
+  pytest suite for the backend/pipeline, no frontend component or
+  integration tests. Every fix made during this project's active
+  development has been verified by hand (manual syntax checks, one-off
+  scripts, manual clicking through the UI). This is adequate for the
+  current single-developer, single-machine pace and will not survive:
+  (a) a second contributor, (b) a training-data update that silently
+  changes class names again, or (c) a dependency upgrade (e.g. the
+  `ultralytics` package itself flags a newer version is available).
+
+
+================================================================================
+3. MODEL TRAINING AND EVALUATION STATUS
+================================================================================
+
+3.1 CURRENT STATE (verified against actual training artifacts)
+--------------------------------------------------------------------------------
+- Dataset: Roboflow "football-players-detection" (4 classes: ball,
+  goalkeeper, player, referee). 298 train images / 49 validation images /
+  25 test images.
+- Training history: three chained runs — 5 epochs @ 640px (cold start)
+  -> +20 epochs @ 640px -> +30 epochs @ 1280px (cumulative ~55 epochs).
+- Latest checkpoint metrics (final epoch of the 1280px phase):
+     precision      ~0.89
+     recall         ~0.79
+     mAP50          ~0.82
+     mAP50-95       ~0.61
+  These are AGGREGATE across all 4 classes. Ball is very likely the
+  weakest individual class (small, fast-moving object, standard result
+  for this kind of dataset) — the per-class breakdown has not been
+  reviewed in this audit and should be before declaring detection
+  "production ready."
+- This checkpoint is now deployed as the active model
+  (`app/pipeline/models/best.pt`), and `USE_MOCK_PIPELINE` is off — the
+  app is running real inference, not fabricated demo data.
+
+3.2 RISKS / GAPS
+--------------------------------------------------------------------------------
+- [MEDIUM] 298 training images is small by CV standards for a 4-class
+  detector including a small/fast object class. mAP50 ~0.82 aggregate is
+  a reasonable MVP starting point, not a production bar.
+- [MEDIUM] No documented per-class metrics review, no documented
+  qualitative review against footage that ISN'T from the training
+  distribution (e.g. a different camera angle/lighting than the Roboflow
+  source clips). The one available sample video is the right next check.
+- [LOW] No model versioning/registry — "the current model" is just
+  whatever file sits at `app/pipeline/models/best.pt`. If it's replaced,
+  there's no record of which training run produced the one currently
+  live, no rollback path beyond manually re-copying from `training/runs/`.
+- [LOW] No evaluation harness comparing the model against the actual
+  target use case end-to-end (i.e. "run the full PitchTrack pipeline on
+  a fresh video and check tracking continuity/ID stability"), only
+  Ultralytics' own train/val split metrics.
+
+3.3 RECOMMENDATION SUMMARY (see Section 6 for scheduling)
+--------------------------------------------------------------------------------
+- Pull per-class precision/recall/mAP, not just the aggregate.
+- Establish a simple "model card" convention: which run produced the
+  live model, what data it was trained on, what its known weak points
+  are (this doubles as onboarding material for a future contributor).
+- Treat more/better-varied training data as the single highest-leverage
+  lever for the next accuracy jump, ahead of further epoch increases on
+  the same 298 images (diminishing returns already visible: metrics
+  moved <1 point in the last several epochs of the 1280px run).
+
+
+================================================================================
+4. IMPROVEMENTS AND REFACTORS (code quality, testing, performance)
+================================================================================
+Ranked by IMPACT vs EFFORT. "Effort" is rough solo-developer sizing, not
+team-days.
+
+--------------------------------------------------------------------------------
+PRIORITY 1 — Do first (high impact, low-to-medium effort)
+--------------------------------------------------------------------------------
+1. Initialize git, commit current state, adopt a real commit cadence.
+   Impact: eliminates total-loss risk. Effort: minutes.
+2. Wire the frontend tracking overlay to real `positions.json` data (or,
+   as an interim step, clearly relabel/remove the procedural placeholder
+   so the UI doesn't misrepresent itself). Impact: closes the biggest
+   trust gap in the product. Effort: medium (needs a canvas/SVG layer
+   driven by fetched per-frame positions, keyed to video currentTime).
+3. Add a visible "not calibrated" state in the dashboard whenever
+   `pitch_calibrated` is false, instead of silently showing 0 km/h / 0 m.
+   Impact: turns a confusing bug-looking gap into an understood, expected
+   state. Effort: small (a few lines of conditional UI + one field
+   already available in the API response).
+4. Stand up a minimal backend test suite (pytest) covering at minimum:
+   video validation edge cases, the field-boundary filter, the
+   team-relative ID mapping, and the mock pipeline's output shape.
+   Impact: catches the exact category of regression already found twice
+   this project (silent class-name/param-wiring bugs). Effort: medium.
+
+--------------------------------------------------------------------------------
+PRIORITY 2 — Next (medium impact, medium effort)
+--------------------------------------------------------------------------------
+5. Stream video frames instead of loading the whole video into memory;
+   or at minimum, cap accepted duration/resolution to something the
+   current architecture can safely hold in memory, with a clear
+   validation error instead of a silent OOM.
+6. Add structured logging (even a simple rotating file log) and persist
+   full tracebacks on pipeline failure, not just the exception message.
+7. Move processing off the request-serving process — a lightweight job
+   queue (even a simple on-disk queue + a separate worker process) so one
+   long video doesn't block new uploads. This is explicitly flagged as a
+   "later" concern in the PRD, and current usage doesn't demand it yet,
+   but it's worth sequencing before demoing concurrent uploads.
+8. Externalize configuration (model path, mock flag, CORS origins) via
+   environment variables with sane local defaults, ahead of any
+   deployment off the current machine.
+
+--------------------------------------------------------------------------------
+PRIORITY 3 — Later (lower urgency, or higher effort relative to payoff)
+--------------------------------------------------------------------------------
+9. Frontend test coverage (component tests for the stats table, filters,
+   export flow).
+10. Pitch calibration UI (click four points on a still frame) — turns
+    speed/distance from "always zero" into a real, usable feature.
+    Meaningful effort; high payoff once done, since it unblocks a core
+    PRD feature (G4 — Movement Analytics) that currently doesn't work
+    end-to-end for any real user.
+11. Model registry / versioning convention, CI for lint + tests.
+
+
+================================================================================
+5. VISUAL/UI ENHANCEMENTS ROADMAP
+================================================================================
+
+5.1 UX / INTERACTION
+--------------------------------------------------------------------------------
+- No loading indicators on most data fetches (Analysis page, exports) —
+  a slow network/large result currently just looks frozen. Add skeleton
+  states or spinners on every async fetch.
+- No visible error recovery — errors render as a single red line of text
+  with no retry action. Add a retry button/affordance wherever a fetch
+  can fail (upload, results load, export).
+- Icon-only controls (⏮ Play ⏭, fullscreen toggle) have no `aria-label` or
+  visible tooltip — unclear to new users and invisible to screen readers.
+- The "search player" field and the team/overlay filters have no visual
+  indication of an active/non-default filter state at a glance (e.g. no
+  badge/count showing "N filters applied").
+
+5.2 ACCESSIBILITY
+--------------------------------------------------------------------------------
+- Verify WCAG AA contrast for `--text-dim` (#9aa0ab) on `--bg` (#0f1115)
+  and on `--panel` (#171a21) — likely borderline; dim secondary text is a
+  common contrast failure point and this codebase uses it heavily for
+  labels/hints.
+- Team indicators already use shape + color (good practice, correctly
+  called out in the PRD) — extend the same principle to the overlay's
+  ball/referee markers, which currently rely on color alone (yellow ball,
+  white-ish referee) with no shape or label differentiation at a glance.
+- No `prefers-reduced-motion` handling on the newly-added scroll-linked
+  hero animation (`GoalScrollHero`) — motion-sensitive users get the full
+  parallax/skew/zoom effect with no opt-out. Add a media-query guard that
+  disables or simplifies the animation when reduced motion is requested.
+- Form inputs (team select, player search, time-range fields) rely on
+  adjacent `<label>` text but should be checked for correct `for`/`id`
+  association or wrapping, not just visual proximity.
+- No keyboard-navigation pass has been done on the Analysis workspace
+  (tab order through filters -> table -> chart -> video controls).
+
+5.3 BRANDING CONSISTENCY
+--------------------------------------------------------------------------------
+- No favicon, no logo/wordmark beyond a plain-text "PitchTrack" heading —
+  low effort, meaningfully raises perceived polish (browser tab, bookmark,
+  screenshots/demos all currently show a generic blank/default icon).
+- Color system is defined once as CSS variables (good foundation) but
+  isn't documented anywhere as an actual style guide (naming, usage
+  rules for --accent vs --team-a/--team-b, when to use --panel vs --bg).
+  A one-page style reference would keep future additions consistent.
+- Dark-only theme, hardcoded (`color-scheme: dark` in `:root`) — fine as
+  an intentional design choice, but worth stating explicitly as a
+  decision (vs. an oversight) so it isn't "fixed" accidentally later.
+
+5.4 RESPONSIVE DESIGN
+--------------------------------------------------------------------------------
+- The Analysis Workspace's two-column grid (video + stats,
+  `1.4fr 1fr`) and the speed-comparison chart's fixed-ish SVG layout have
+  not been verified below ~1000px width — on a tablet or narrow laptop
+  window this likely needs to collapse to a single column.
+- No mobile pass has been done at all. Given the target users (coaches,
+  students, grassroots analysts per the PRD) plausibly reviewing results
+  on a phone between training sessions, at least a "read-only, single
+  column, no editing" mobile layout is worth scoping even if full mobile
+  upload/record isn't a goal.
+
+5.5 QUICK WINS (do these regardless of the above roadmap's sequencing)
+--------------------------------------------------------------------------------
+- Favicon + page title per route (currently generic "PitchTrack" title
+  on every page/tab, making multiple open tabs indistinguishable).
+- aria-labels on icon-only buttons.
+- A visible "Speed/distance unavailable — pitch not calibrated" notice
+  instead of silent zeros (ties directly to Section 2.2's [HIGH] item).
+
+
+================================================================================
+6. NEXT STEPS AND MILESTONES
+================================================================================
+Ownership below is by ROLE (Backend/Pipeline, Frontend, ML, PM) — assign
+to whichever person(s) actually cover these roles today. Timelines assume
+solo, part-time effort; compress if more time/people are available.
+
+--------------------------------------------------------------------------------
+MILESTONE 0 — Safety net (Owner: PM/whoever touches the repo first)
+Timeline: same day
+--------------------------------------------------------------------------------
+- git init + first commit of current state.
+- Acceptance criteria: `git log` shows at least one commit; a documented
+  commit happens after every subsequent work session from here on.
+
+--------------------------------------------------------------------------------
+MILESTONE 1 — Close the trust gap (Owner: Frontend)
+Timeline: 3-5 working sessions
+--------------------------------------------------------------------------------
+- Wire the video overlay to real `positions.json` (or clearly disable/
+  relabel the placeholder in the meantime).
+- Surface `pitch_calibrated: false` as a visible dashboard notice.
+- Acceptance criteria: opening Analysis for a freshly processed real
+  video shows overlays that visibly correspond to actual detected
+  players (spot-checkable against the annotated video export), and any
+  video without calibration clearly states why speed/distance read 0.
+
+--------------------------------------------------------------------------------
+MILESTONE 2 — Regression safety (Owner: Backend/Pipeline)
+Timeline: 3-5 working sessions
+--------------------------------------------------------------------------------
+- Minimal pytest suite (validation, field boundary, ID mapping, mock
+  pipeline shape) + a habit of running it before every commit.
+- Structured error logging with persisted tracebacks.
+- Acceptance criteria: `pytest` runs and passes locally; a failed
+  pipeline run leaves a readable log entry with a full traceback, not
+  just a one-line message in `job.json`.
+
+--------------------------------------------------------------------------------
+MILESTONE 3 — Robustness under real usage (Owner: Backend)
+Timeline: 1-2 weeks, as-available
+--------------------------------------------------------------------------------
+- Memory-safe video handling (streaming or enforced duration/resolution
+  caps with clear validation errors).
+- Externalized config (env vars for model path, mock flag, CORS).
+- Acceptance criteria: a long/high-res upload either processes
+  successfully or fails with a clear, user-facing validation message —
+  never a silent process kill.
+
+--------------------------------------------------------------------------------
+MILESTONE 4 — Calibration & real analytics (Owner: Full-stack + ML)
+Timeline: 2-3 weeks
+--------------------------------------------------------------------------------
+- Pitch calibration UI (click 4 points on a still frame -> stored per
+  video -> passed into `run_pipeline.run()`).
+- Model: pull per-class metrics, document a model card, plan a data
+  collection/expansion pass if ball-class recall is weak.
+- Acceptance criteria: at least one end-to-end video shows real,
+  non-zero speed/distance figures that pass a sanity check (e.g. peak
+  sprint speed in a plausible 20-35 km/h human range, not 0 or 400).
+
+--------------------------------------------------------------------------------
+MILESTONE 5 — Polish pass (Owner: Frontend/Design)
+Timeline: 1 week, can run in parallel with Milestone 3/4
+--------------------------------------------------------------------------------
+- Favicon, per-page titles, aria-labels, reduced-motion guard on the
+  hero animation, contrast check on dim text.
+- Acceptance criteria: a fresh visitor can identify the browser tab, a
+  screen-reader user can operate the video controls, and the marketing
+  hero animation respects reduced-motion settings.
+
+
+================================================================================
+QUICK PROJECT READINESS CHECKLIST
+================================================================================
+[ ] Git repository initialized with committed history
+[ ] Real (non-placeholder) tracking overlay in the dashboard
+[ ] "Not calibrated" state visible instead of silent zero stats
+[ ] Backend test suite exists and passes
+[ ] Pipeline failures logged with full tracebacks, not just a message
+[ ] Long/large video uploads fail gracefully instead of OOM-killing
+[ ] Config externalized (no hardcoded prod-unsafe values in source)
+[ ] Favicon + per-page titles in place
+[ ] Icon-only controls have accessible labels
+[ ] Contrast-checked dim/secondary text against WCAG AA
+[ ] Reduced-motion guard on scroll-linked animations
+[ ] Pitch calibration flow exists (speed/distance work for real users)
+[ ] Per-class model metrics reviewed (not just aggregate mAP)
+[ ] Model card / versioning convention documented
+[ ] Mobile/narrow-viewport layout verified for the Analysis workspace
+
+================================================================================
+END OF REPORT
+================================================================================
