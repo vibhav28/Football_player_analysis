@@ -42,7 +42,13 @@ def save_video(frames: list[np.ndarray], output_path: str, fps: float) -> None:
     if not frames:
         raise ValueError("No frames to write")
     height, width = frames[0].shape[:2]
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    # H.264 (avc1), not mp4v (MPEG-4 Part 2): browsers' <video> element
+    # cannot decode mp4v even though a .mp4 container is otherwise valid,
+    # so the file downloads fine but nothing ever renders — silently
+    # "black forever" rather than an error. avc1 is what this OpenCV/
+    # FFmpeg build actually supports writing for MP4; H264/X264 fourcc
+    # strings aren't valid MP4 tags and fall back to avc1 anyway.
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     for frame in frames:
         writer.write(frame)

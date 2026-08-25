@@ -56,7 +56,19 @@ def detect_frames(frames: list[np.ndarray], model_path: str) -> list[list[Detect
 
     for start in range(0, len(frames), BATCH_SIZE):
         batch = frames[start : start + BATCH_SIZE]
-        results = model.predict(batch, conf=CONFIDENCE_THRESHOLD, imgsz=IMG_SIZE, verbose=False)
+        # agnostic_nms=True: without it, Ultralytics' NMS only suppresses
+        # overlapping boxes of the SAME class, so a "player" box and a
+        # "goalkeeper" box on the same real person (a class the model is
+        # visibly unsure between, given they're aliased to one class
+        # downstream anyway — see CLASS_NAME_ALIASES) both survive as
+        # separate detections, becoming two separate tracked "players"
+        # for one real athlete. Verified on real footage: near-duplicate
+        # boxes (~same coordinates, different confidence) were present
+        # per-frame before this. Class-agnostic NMS suppresses those
+        # regardless of which class they were assigned.
+        results = model.predict(
+            batch, conf=CONFIDENCE_THRESHOLD, imgsz=IMG_SIZE, agnostic_nms=True, verbose=False
+        )
 
         for offset, result in enumerate(results):
             frame_index = start + offset

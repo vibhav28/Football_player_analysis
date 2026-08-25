@@ -5,8 +5,6 @@ import PlayerStatsTable from "../components/PlayerStatsTable.jsx";
 import VideoPlayer from "../components/VideoPlayer.jsx";
 import SpeedComparisonChart from "../components/SpeedComparisonChart.jsx";
 
-const OVERLAY_TOGGLES = ["Players", "Player IDs", "Ball", "Referee"];
-
 // PRD section 40, Screen 4 — Analysis Workspace
 export default function AnalysisPage() {
   const { videoId } = useParams();
@@ -18,9 +16,6 @@ export default function AnalysisPage() {
   const [team, setTeam] = useState("All");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
-  const [overlays, setOverlays] = useState(
-    Object.fromEntries(OVERLAY_TOGGLES.map((name) => [name, true])),
-  );
 
   useEffect(() => {
     const trackingId = search.trim() ? Number(search.trim().replace(/\D/g, "")) : undefined;
@@ -49,7 +44,25 @@ export default function AnalysisPage() {
 
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
 
-      {/* Top: team filter + overlay controls (PRD sections 21, 23) */}
+      {video && video.pitch_calibrated === false && (
+        <div
+          className="panel"
+          style={{
+            borderColor: "rgba(255, 184, 108, 0.4)",
+            background: "rgba(255, 184, 108, 0.06)",
+            fontSize: 13,
+            padding: "10px 16px",
+          }}
+        >
+          <strong style={{ color: "#ffb86c" }}>Speed and distance unavailable.</strong>{" "}
+          <span className="text-dim">
+            This video hasn't been pitch-calibrated, so meters-per-pixel is unknown — figures below read 0
+            rather than a guess. Tracking, team classification, and the annotated video are unaffected.
+          </span>
+        </div>
+      )}
+
+      {/* Team filter (PRD section 23) */}
       <div className="panel" style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
         <label>
           Team:{" "}
@@ -69,31 +82,11 @@ export default function AnalysisPage() {
             style={{ width: 80 }}
           />
         </label>
-
-        <div style={{ display: "flex", gap: 12 }}>
-          {OVERLAY_TOGGLES.map((name) => (
-            <label key={name} className="text-dim" style={{ fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={overlays[name]}
-                onChange={(e) => setOverlays({ ...overlays, [name]: e.target.checked })}
-              />{" "}
-              {name}
-            </label>
-          ))}
-        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20, marginTop: 20 }}>
         <div>
-          <VideoPlayer
-            src={annotatedVideoUrl(videoId)}
-            overlays={overlays}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            teamFilter={team}
-            searchFilter={search}
-          />
+          <VideoPlayer src={annotatedVideoUrl(videoId)} />
         </div>
 
         <div className="panel">

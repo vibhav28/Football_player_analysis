@@ -72,24 +72,50 @@ def _kmeans_fit(
 
 
 def get_player_color(frame: np.ndarray, bbox: tuple[float, float, float, float]) -> np.ndarray:
-    """Sample the dominant color of a player's jersey (top half of the bbox,
-    to avoid shorts/socks/background pitch pixels skewing the cluster)."""
-    x1, y1, x2, y2 = (int(v) for v in bbox)
-    crop = frame[y1:y2, x1:x2]
-    if crop.size == 0:
-        return np.array([0, 0, 0])
+    """Sample the dominant color of a player's jersey — the torso region
+    (horizontal center, upper-but-not-topmost band), not the full top half.
 
-    top_half = crop[: crop.shape[0] // 2, :]
-    pixels = top_half.reshape(-1, 3).astype(np.float32)
+    At typical broadcast-camera player sizes (bboxes as small as ~25x50px
+    at this project's tested resolution), background/pitch bleeding into
+    the box edges can easily outnumber true jersey pixels — verified on
+    real detections, where a white-kit player's top-half crop split
+    62%/38% background/jersey. Assuming "the larger cluster is the
+    jersey" then picks background instead, which is what was happening.
+    Narrowing the sample region to the torso avoids relying on that
+    assumption at all, rather than trying to guess which cluster is which
+    after the fact.
+    """
+    x1, y1, x2, y2 = (int(v) for v in bbox)
+    width, height = x2 - x1, y2 - y1
+    # horizontal center 60%, vertical band 15%-55% (skips the head and
+    # stays well above the shorts/socks line)
+    tx1 = x1 + int(width * 0.2)
+    tx2 = x1 + int(width * 0.8)
+    ty1 = y1 + int(height * 0.15)
+    ty2 = y1 + int(height * 0.55)
+    torso = frame[ty1:ty2, tx1:tx2]
+
+    if torso.size == 0:
+        crop = frame[y1:y2, x1:x2]
+        return crop.reshape(-1, 3).astype(np.float32).mean(axis=0) if crop.size else np.array([0, 0, 0])
+
+    pixels = torso.reshape(-1, 3).astype(np.float32)
     if len(pixels) < 2:
         return pixels.mean(axis=0) if len(pixels) else np.array([0, 0, 0])
 
-    labels, centers = _kmeans_fit(pixels, n_clusters=2, n_init=1, seed=0)
-    # The larger cluster is assumed to be the jersey; the smaller is
-    # background/skin bleeding into the crop corners.
-    counts = np.bincount(labels)
-    dominant_cluster = int(np.argmax(counts))
-    return centers[dominant_cluster]
+    # Still 2-means the torso crop (rather than a flat mean) so a stray
+    # shadow/highlight band within the torso region doesn't wash out the
+    # true jersey color — but now pick the lower-variance (tighter) of
+    # the two clusters as the jersey, since fabric under roughly uniform
+    # lighting is more internally consistent than a grass/shadow/skin
+    # mix, regardless of which cluster happens to be larger.
+    labels, centers = _kmeans_fit(pixels, n_clusters=2, n_init=5, seed=0)
+    variances = [
+        float(np.var(pixels[labels == k])) if np.any(labels == k) else np.inf
+        for k in range(len(centers))
+    ]
+    tightest_cluster = int(np.argmin(variances))
+    return centers[tightest_cluster]
 
 
 def assign_teams(

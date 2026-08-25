@@ -67,4 +67,25 @@ def track_players(
                 "class_name": id_to_name.get(int(tracked.class_id[i]), "player"),
             }
 
-    return dict(tracks)
+    return _drop_short_tracks(dict(tracks), fps)
+
+
+# A track that only exists for a fraction of a second is almost always
+# noise, not a real player: a false-positive detection blinking on for a
+# frame or two, or ByteTrack briefly losing and immediately reassigning a
+# new ID to someone already tracked under a different ID. Left in, these
+# both inflate the final player count (a 30s clip should show roughly as
+# many players as were actually on the pitch, not 3-4x that) and pollute
+# team-color classification, whose input is one color sample per track —
+# a flood of short, often mis-cropped samples can swamp the real signal
+# from the genuinely long-lived player tracks. This does NOT fix ID churn
+# itself (a real player split across two long-ish tracks still counts
+# twice) — it only removes the shortest, noisiest blips.
+MIN_TRACK_SECONDS = 1.0
+
+
+def _drop_short_tracks(
+    tracks: dict[int, dict[int, dict]], fps: float, min_seconds: float = MIN_TRACK_SECONDS
+) -> dict[int, dict[int, dict]]:
+    min_frames = max(1, round(min_seconds * (fps or 25.0)))
+    return {tid: track for tid, track in tracks.items() if len(track) >= min_frames}

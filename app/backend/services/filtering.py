@@ -23,14 +23,11 @@ def get_filtered_statistics(
         return {"video": None, "players": [], "ball": None}
 
     players = stats_doc["players"]
+    # None (not a fabricated fallback) when the video wasn't pitch-calibrated
+    # or the ball was never reliably tracked — the frontend hides the "Ball
+    # Live Tracking" panel entirely when this is falsy rather than show
+    # invented numbers.
     ball = stats_doc.get("ball")
-    if ball is None:
-        ball = {
-            "average_speed_kmh": 22.4,
-            "minimum_speed_kmh": 0.1,
-            "maximum_speed_kmh": 72.8,
-            "total_distance_m": 1250.3
-        }
 
     fps = stats_doc["video"]["fps"] or 25.0
 

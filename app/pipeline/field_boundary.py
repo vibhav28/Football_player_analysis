@@ -21,8 +21,16 @@ fallback for videos that aren't calibrated.
 from .detection import Detection
 from .utils import get_foot_position
 
+# Raised broadcast-style sideline cameras (crowd + stands + advertising
+# boards above the pitch) were found to need a much larger top margin than
+# a tight/pitch-side camera — a real match clip showed crowd/board content
+# extending down to roughly 20-23% of frame height, not the ~6% originally
+# assumed. Misdetections in that zone don't move, so they show up as
+# suspiciously perfect full-video-length "phantom players" if not excluded.
+# Still just a rectangular guess, not real pitch-line detection — re-tune
+# per camera angle if false positives keep appearing near the top of frame.
 FIELD_MARGIN = {
-    "top": 0.06,
+    "top": 0.22,
     "bottom": 0.0,
     "left": 0.02,
     "right": 0.02,
