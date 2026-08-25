@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import GoalScrollHero from "../components/GoalScrollHero.jsx";
+import RecentVideos from "../components/RecentVideos.jsx";
 
 // PRD section 40, Screen 1 — Home
 export default function HomePage() {
@@ -17,6 +18,8 @@ export default function HomePage() {
           Upload Video
         </button>
       </div>
+
+      <RecentVideos />
 
       <GoalScrollHero />
     </div>
