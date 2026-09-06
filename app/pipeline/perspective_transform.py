@@ -33,6 +33,15 @@ class PerspectiveTransformer:
         if len(pixel_corners) != 4:
             raise ValueError("Perspective transform requires exactly 4 reference points")
 
+        # Stored on the instance (not just baked into target_corners) so
+        # transform_point's out-of-bounds check below validates against
+        # whatever dimensions THIS transformer was actually built with —
+        # a transformer built with a smaller custom pitch (e.g. a 7-a-side
+        # 40x60m field) must reject points outside ITS bounds, not the
+        # module-level 68x105m FIFA default, or every custom pitch size
+        # silently gets validated against the wrong rectangle.
+        self.target_width_m = target_width_m
+        self.target_length_m = target_length_m
         self.target_corners = np.array(
             [
                 [0, 0],
@@ -54,7 +63,10 @@ class PerspectiveTransformer:
         # calibrated region — perspective extrapolation gets unreliable
         # far from the reference points.
         margin = 5.0
-        if not (-margin <= x <= PITCH_WIDTH_M + margin and -margin <= y <= PITCH_LENGTH_M + margin):
+        if not (
+            -margin <= x <= self.target_width_m + margin
+            and -margin <= y <= self.target_length_m + margin
+        ):
             return None
 
         return float(x), float(y)

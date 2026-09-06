@@ -37,6 +37,7 @@ export default function RecentVideos() {
   function open(video) {
     if (video.status === "Completed") navigate(`/videos/${video.video_id}/analysis`);
     else if (video.status === "Failed") return; // nothing useful to show yet
+    else if (video.status === "Uploaded") navigate(`/videos/${video.video_id}/calibrate`);
     else navigate(`/videos/${video.video_id}/processing`);
   }
 

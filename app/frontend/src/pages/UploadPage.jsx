@@ -29,7 +29,7 @@ export default function UploadPage() {
     setError(null);
     try {
       const result = await uploadVideo(file, setProgress);
-      navigate(`/videos/${result.video_id}/processing`);
+      navigate(`/videos/${result.video_id}/calibrate`);
     } catch (err) {
       setError(err.message);
       setUploading(false);
@@ -41,7 +41,7 @@ export default function UploadPage() {
       <h2>Upload Video</h2>
 
       <div
-        className="panel"
+        className="panel dropzone"
         style={{
           borderStyle: "dashed",
           textAlign: "center",

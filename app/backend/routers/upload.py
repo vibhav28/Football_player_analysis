@@ -1,10 +1,11 @@
-"""POST /api/videos/upload (PRD section 9.1) — validates, stores, and
-kicks off processing in the background so the response returns immediately
-and the frontend can poll /status (Screen 2 -> Screen 3 transition)."""
+"""POST /api/videos/upload (PRD section 9.1) — validates and stores the
+video. Processing doesn't start here: the frontend takes the user to
+pitch calibration next (routers/calibration.py), which is what actually
+kicks off the CV pipeline (Screen 2 -> calibration -> Screen 3)."""
 
 import os
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile
 
 from ..services import processing_manager, storage
 from ..services.video_validation import VideoValidationError, validate_extension, validate_file_size, validate_readable
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/api/videos", tags=["upload"])
 
 
 @router.post("/upload")
-async def upload_video(file: UploadFile, background_tasks: BackgroundTasks):
+async def upload_video(file: UploadFile):
     try:
         validate_extension(file.filename)
     except VideoValidationError as exc:
@@ -37,6 +38,5 @@ async def upload_video(file: UploadFile, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail=exc.reason) from exc
 
     processing_manager.mark_uploaded(video_id, file.filename)
-    background_tasks.add_task(processing_manager.run_processing, video_id, dest_path)
 
     return {"video_id": video_id, "status": "Uploaded"}

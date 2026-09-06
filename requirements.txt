@@ -6,9 +6,21 @@ pydantic==2.9.2
 
 # --- Computer Vision Pipeline ---
 opencv-python==4.10.0.84
-numpy==1.26.4
+# boxmot forces numpy>=2 (ultralytics 8.2.103's own pin says <2.0.0, but
+# that's an overly conservative pin from before numpy 2.0 stabilized —
+# verified numpy 2.5.2 works fine at runtime with this exact ultralytics
+# version: detection, pandas interpolation, and cv2 all still work).
+numpy==2.5.2
 pandas==2.2.2
-scikit-learn==1.5.1
 ultralytics==8.2.103
-supervision==0.23.0
+# BoT-SORT (with ReID) replaced supervision's plain ByteTrack for player
+# tracking — see app/pipeline/tracking.py's module docstring for why.
+# scikit-learn and supervision are no longer imported anywhere in app/
+# (team_classification.py has its own dependency-free K-Means; see that
+# file for why) and were removed rather than left as dead weight.
+boxmot==23.0.0
 Pillow==10.4.0
+
+# --- Testing ---
+pytest==9.1.1
+httpx==0.28.1

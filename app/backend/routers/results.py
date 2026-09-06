@@ -3,10 +3,10 @@ video library/delete (PRD section 39)."""
 
 import os
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..services import filtering, storage
+from ..services.range_response import range_file_response
 
 router = APIRouter(prefix="/api/videos", tags=["results"])
 
@@ -44,21 +44,21 @@ async def get_positions(video_id: str):
 
 
 @router.get("/{video_id}/video")
-async def get_original_video(video_id: str):
+async def get_original_video(video_id: str, request: Request):
     path = storage.find_upload_path(video_id)
     if path is None or not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Video not found.")
-    return FileResponse(path, media_type="video/mp4")
+    return range_file_response(request, path, media_type="video/mp4")
 
 
 @router.get("/{video_id}/annotated")
-async def get_annotated_video(video_id: str):
+async def get_annotated_video(video_id: str, request: Request):
     path = os.path.join(storage.result_dir(video_id), "annotated.mp4")
     if not os.path.exists(path):
         path = storage.find_upload_path(video_id)
         if path is None or not os.path.exists(path):
             raise HTTPException(status_code=404, detail="Annotated video not found.")
-    return FileResponse(path, media_type="video/mp4")
+    return range_file_response(request, path, media_type="video/mp4")
 
 
 @router.delete("/{video_id}")

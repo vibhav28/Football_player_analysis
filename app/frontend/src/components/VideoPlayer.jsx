@@ -113,6 +113,7 @@ export default function VideoPlayer({ src }) {
         }}
       >
         <button
+          className="icon-btn"
           onClick={() => stepFrame(-1)}
           aria-label="Step back one frame"
           style={{
@@ -127,6 +128,7 @@ export default function VideoPlayer({ src }) {
           ⏮
         </button>
         <button
+          className="icon-btn"
           onClick={togglePlay}
           style={{
             background: "var(--accent)",
@@ -141,6 +143,7 @@ export default function VideoPlayer({ src }) {
           {playing ? "Pause" : "Play"}
         </button>
         <button
+          className="icon-btn"
           onClick={() => stepFrame(1)}
           aria-label="Step forward one frame"
           style={{
@@ -160,6 +163,7 @@ export default function VideoPlayer({ src }) {
           {PLAYBACK_SPEEDS.map((speed) => (
             <button
               key={speed}
+              className="icon-btn"
               onClick={() => setSpeed(speed)}
               style={{
                 background: rate === speed ? "var(--accent)" : "transparent",
@@ -177,6 +181,7 @@ export default function VideoPlayer({ src }) {
 
         {/* Full screen toggle */}
         <button
+          className="icon-btn"
           onClick={toggleFullscreen}
           style={{
             marginLeft: "auto",

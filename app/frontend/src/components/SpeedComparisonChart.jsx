@@ -42,7 +42,13 @@ export default function SpeedComparisonChart({ players, selectedId, onSelect }) 
   const selectedPlayer = players.find((p) => compositeIdOf(p) === selectedId);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: selectedPlayer ? "2.5fr 1fr" : "1fr", gap: 20, marginTop: 20, transition: "grid-template-columns 0.3s ease" }}>
+    <div
+      className="chart-grid"
+      style={{
+        gridTemplateColumns: selectedPlayer ? "2.5fr 1fr" : "1fr",
+        transition: "grid-template-columns 0.3s ease",
+      }}
+    >
       {/* Chart Panel */}
       <div className="panel" style={{ display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -50,6 +56,7 @@ export default function SpeedComparisonChart({ players, selectedId, onSelect }) 
           
           <div style={{ display: "flex", gap: 8 }}>
             <button
+              className="icon-btn"
               onClick={() => setMetric("average")}
               style={{
                 background: metric === "average" ? "var(--accent)" : "transparent",
@@ -59,12 +66,12 @@ export default function SpeedComparisonChart({ players, selectedId, onSelect }) 
                 padding: "6px 12px",
                 fontSize: 12,
                 fontWeight: 600,
-                transition: "all 0.2s ease"
               }}
             >
               Average Speed
             </button>
             <button
+              className="icon-btn"
               onClick={() => setMetric("max")}
               style={{
                 background: metric === "max" ? "var(--accent)" : "transparent",
@@ -74,7 +81,6 @@ export default function SpeedComparisonChart({ players, selectedId, onSelect }) 
                 padding: "6px 12px",
                 fontSize: 12,
                 fontWeight: 600,
-                transition: "all 0.2s ease"
               }}
             >
               Max Speed
@@ -254,7 +260,7 @@ export default function SpeedComparisonChart({ players, selectedId, onSelect }) 
             flexDirection: "column",
             justifyContent: "space-between",
             border: "1px solid var(--accent)",
-            animation: "fadeIn 0.3s ease"
+            animation: "fadeIn 220ms var(--ease-out)"
           }}
         >
           <div>

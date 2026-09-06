@@ -28,8 +28,35 @@ def mark_uploaded(video_id: str, original_filename: str) -> None:
     )
 
 
+def mark_processing(video_id: str) -> dict:
+    """Flips job.json to "Processing" and returns the updated job dict.
+
+    Called synchronously from the calibrate route BEFORE scheduling the
+    background task — not just from inside run_processing() below — so
+    that the HTTP response (which already says {"status": "Processing"})
+    and job.json can never disagree. run_processing() used to be the only
+    place this write happened, but that runs as a FastAPI BackgroundTask,
+    which executes AFTER the response is already sent: a client polling
+    GET /status immediately upon receiving the "Processing" response could
+    still read the stale "Uploaded" job.json underneath it.
+    """
+    job = storage.read_job(video_id) or {}
+    job["status"] = "Processing"
+    job["steps"] = _steps("running")
+    storage.write_job(video_id, job)
+    return job
+
+
 def _run_pipeline_in_subprocess(
-    video_path: str, result_dir: str, model_path: str, mock: bool, result_queue
+    video_path: str,
+    result_dir: str,
+    model_path: str,
+    mock: bool,
+    pitch_pixel_corners: list[tuple[float, float, float]] | None,
+    players_per_team: int | None,
+    pitch_width_m: float | None,
+    pitch_length_m: float | None,
+    result_queue,
 ) -> None:
     """Runs in a fresh, spawned OS process, not a thread of the FastAPI
     server. Real video processing was found to reliably SIGSEGV the whole
@@ -49,29 +76,47 @@ def _run_pipeline_in_subprocess(
             result_dir=result_dir,
             model_path=model_path,
             mock=mock,
+            pitch_pixel_corners=pitch_pixel_corners,
+            players_per_team=players_per_team,
+            target_width_m=pitch_width_m,
+            target_length_m=pitch_length_m,
         )
         result_queue.put(("ok", None))
     except Exception as exc:  # noqa: BLE001 - message relayed to the parent process
         result_queue.put(("error", str(exc)))
 
 
-def run_processing(video_id: str, video_path: str) -> None:
+def run_processing(
+    video_id: str,
+    video_path: str,
+    pitch_pixel_corners: list[tuple[float, float, float]] | None = None,
+    players_per_team: int | None = None,
+    pitch_width_m: float | None = None,
+    pitch_length_m: float | None = None,
+) -> None:
     """Called from a FastAPI BackgroundTask (itself a background thread).
     Blocks that thread on the subprocess's completion — fine, since it
     isn't the thread serving HTTP requests. For longer videos this is the
     natural place to swap in a real job queue later (PRD section 34)
     without changing the CV pipeline itself.
     """
-    job = storage.read_job(video_id) or {}
-    job["status"] = "Processing"
-    job["steps"] = _steps("running")
-    storage.write_job(video_id, job)
+    job = mark_processing(video_id)
 
     ctx = multiprocessing.get_context("spawn")
     result_queue = ctx.Queue()
     process = ctx.Process(
         target=_run_pipeline_in_subprocess,
-        args=(video_path, storage.result_dir(video_id), MODEL_PATH, USE_MOCK_PIPELINE, result_queue),
+        args=(
+            video_path,
+            storage.result_dir(video_id),
+            MODEL_PATH,
+            USE_MOCK_PIPELINE,
+            pitch_pixel_corners,
+            players_per_team,
+            pitch_width_m,
+            pitch_length_m,
+            result_queue,
+        ),
     )
     process.start()
     process.join()

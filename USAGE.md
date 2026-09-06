@@ -162,8 +162,9 @@ Interactive docs (Swagger UI) are available at
 * **Upload fails immediately with a format error** — only `.mp4`, `.mov`,
   `.avi` are accepted (PRD section 9.1).
 * **Frontend can't reach the backend / CORS errors** — make sure the
-  backend is running on port 8000 and the frontend on 5173; CORS is
-  hardcoded to allow `http://localhost:5173` in `app/backend/main.py`.
+  backend is running on port 8000; CORS allows any `http://localhost:<port>`
+  origin (see `app/backend/main.py`), so the frontend dev server can run on
+  5173 or whatever port Vite falls back to if 5173 is already in use.
 * **`pip install` hangs or fails building `opencv-python`/`ultralytics`
   from source** — you're likely on Python 3.14; recreate the venv with
   `python3.13` (see Setup above).

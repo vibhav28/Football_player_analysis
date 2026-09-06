@@ -28,6 +28,7 @@ app/pipeline/models/*.onnx
 
 # --- Training artifacts (dataset + yolo run history, see TRAINING.md) ---
 training/
+New Workspace/
 
 # --- OS / editor ---
 .DS_Store
@@ -35,3 +36,7 @@ training/
 .idea/
 
 *.pt
+
+# --- Ad hoc test footage (copyrighted broadcast clips pulled for local
+# testing only -- never meant to be redistributed via this repo) ---
+tottenham_watford_tactical_test.mp4

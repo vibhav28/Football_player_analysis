@@ -60,10 +60,11 @@ export default function ProcessingPage() {
           {job.steps.map((step) => (
             <div
               key={step.name}
+              className="stagger-item"
               style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}
             >
               <span>{step.name}</span>
-              <span className="text-dim">
+              <span className="text-dim step-row-status" data-status={step.status}>
                 {STEP_ICON[step.status]} {step.status}
               </span>
             </div>

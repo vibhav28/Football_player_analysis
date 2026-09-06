@@ -5,12 +5,27 @@ import PlayerStatsTable from "../components/PlayerStatsTable.jsx";
 import VideoPlayer from "../components/VideoPlayer.jsx";
 import SpeedComparisonChart from "../components/SpeedComparisonChart.jsx";
 
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// Picks the player with the highest value for `key`, or null if there are
+// none — avoids a plain Array.reduce blowing up / returning garbage on an
+// empty players list (e.g. a video with zero surviving tracks).
+function topPlayerBy(players, key) {
+  return players.reduce((best, p) => (best === null || p[key] > best[key] ? p : best), null);
+}
+
 // PRD section 40, Screen 4 — Analysis Workspace
 export default function AnalysisPage() {
   const { videoId } = useParams();
   const [video, setVideo] = useState(null);
   const [players, setPlayers] = useState([]);
   const [ballStats, setBallStats] = useState(null);
+  const [possession, setPossession] = useState(null);
   const [error, setError] = useState(null);
 
   const [team, setTeam] = useState("All");
@@ -28,6 +43,7 @@ export default function AnalysisPage() {
         setVideo(data.video);
         setPlayers(data.players);
         setBallStats(data.ball);
+        setPossession(data.possession);
         setError(null);
       })
       .catch((err) => setError(err.message));
@@ -84,12 +100,73 @@ export default function AnalysisPage() {
         </label>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20, marginTop: 20 }}>
+      {/* Match-at-a-glance KPI strip — computed client-side from the same
+          /results payload already fetched above, no extra request. */}
+      <div className="stat-grid" style={{ marginTop: 20 }}>
+        <div className="stat-tile">
+          <div className="stat-tile-label">Players Tracked</div>
+          <div className="stat-tile-value">{players.length}</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile-label">Match Duration</div>
+          <div className="stat-tile-value">{video ? formatDuration(video.duration) : "—"}</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile-label">Top Speed</div>
+          {(() => {
+            const top = topPlayerBy(players, "maximum_speed_kmh");
+            return (
+              <>
+                <div className="stat-tile-value">{top ? `${top.maximum_speed_kmh} km/h` : "—"}</div>
+                {top && <div className="stat-tile-sub">Player {top.tracking_id} ({top.team})</div>}
+              </>
+            );
+          })()}
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile-label">Distance Leader</div>
+          {(() => {
+            const leader = topPlayerBy(players, "total_distance_m");
+            return (
+              <>
+                <div className="stat-tile-value">{leader ? `${leader.total_distance_m} m` : "—"}</div>
+                {leader && <div className="stat-tile-sub">Player {leader.tracking_id} ({leader.team})</div>}
+              </>
+            );
+          })()}
+        </div>
+        <div className="stat-tile">
+          <div className="stat-tile-label">Possession Lead</div>
+          <div className="stat-tile-value">
+            {possession
+              ? (() => {
+                  const [team, pct] = Object.entries(possession).reduce((a, b) => (b[1] > a[1] ? b : a));
+                  return `${team} ${pct}%`;
+                })()
+              : "—"}
+          </div>
+        </div>
+      </div>
+
+      <div className="analysis-grid">
         <div>
           <VideoPlayer src={annotatedVideoUrl(videoId)} />
         </div>
 
         <div className="panel">
+          {possession && (
+            <div style={{ marginBottom: 16 }}>
+              <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Possession</h4>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                <span>Team A {possession["Team A"] ?? 0}%</span>
+                <span>Team B {possession["Team B"] ?? 0}%</span>
+              </div>
+              <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ width: `${possession["Team A"] ?? 0}%`, background: "var(--team-a)" }} />
+                <div style={{ width: `${possession["Team B"] ?? 0}%`, background: "var(--team-b)" }} />
+              </div>
+            </div>
+          )}
           {ballStats && (
             <div
               style={{

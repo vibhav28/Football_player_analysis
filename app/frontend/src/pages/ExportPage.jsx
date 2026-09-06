@@ -13,14 +13,22 @@ export default function ExportPage() {
       <h2>Export Statistics</h2>
 
       <div className="panel" style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 360 }}>
-        <a className="btn-primary" style={{ textDecoration: "none", textAlign: "center" }} href={exportUrl(videoId, "csv")}>
+        <a
+          className="btn-primary stagger-item"
+          style={{ textDecoration: "none", textAlign: "center" }}
+          href={exportUrl(videoId, "csv")}
+        >
           Download CSV
         </a>
-        <a className="btn-primary" style={{ textDecoration: "none", textAlign: "center" }} href={exportUrl(videoId, "json")}>
+        <a
+          className="btn-primary stagger-item"
+          style={{ textDecoration: "none", textAlign: "center" }}
+          href={exportUrl(videoId, "json")}
+        >
           Download JSON
         </a>
         <a
-          className="btn-primary"
+          className="btn-primary stagger-item"
           style={{ textDecoration: "none", textAlign: "center" }}
           href={exportUrl(videoId, "annotated-video")}
         >
